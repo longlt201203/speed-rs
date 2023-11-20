@@ -95,7 +95,7 @@ pub struct HttpServer {
 
 pub struct HttpRequest {
     headers: HashMap<String, String>,
-    body: HashMap<String, String>,
+    body: String,
     method: String,
     uri: String,
     version: String
@@ -103,7 +103,7 @@ pub struct HttpRequest {
 
 pub struct HttpResponse {
     headers: HashMap<String, String>,
-    body: HashMap<String, String>,
+    body: String,
     status: HttpStatusStruct
 }
 
@@ -239,21 +239,10 @@ impl HttpServer {
      */
     fn write_response(mut stream: TcpStream, req: HttpRequest, mut res: HttpResponse) {
         // construct response body
-        let mut body_string = String::new();
         if !res.headers().contains_key("Content-Type") {
             res.insert_header(String::from("Content-Type"), String::from("text/plain"));
         }
-        let data = res.body();
-        let content_type = res.headers().get("Content-Type");
-        match content_type.map(AsRef::as_ref) {
-            Some("application/json") => {
-                body_string = serde_json::to_string(data).unwrap_or(String::new());
-            }
-            _ => {
-                body_string = String::from(if let Some(data_string) = data.get("value") { data_string } else { "" });
-            }
-        }
-        res.insert_header(String::from("Content-Length"), String::from(format!("{}", body_string.len())));
+        res.insert_header(String::from("Content-Length"), String::from(format!("{}", res.body().len())));
 
         // construct response headlines
         let mut response_headlines = Vec::<String>::new();
@@ -271,7 +260,7 @@ impl HttpServer {
             response_string.push('\n');
         }
         response_string.push('\n');
-        response_string.push_str(&body_string);
+        response_string.push_str(res.body());
 
         // println!("Response string: {}", &response_string);
 
@@ -308,7 +297,7 @@ impl HttpServer {
 }
 
 impl HttpRequest {
-    fn new(mut request_headlines: Vec<String>, request_body_string: String) -> Self {
+    fn new(mut request_headlines: Vec<String>, body: String) -> Self {
         // get the first line out
         let first_line = request_headlines.remove(0);
         let metadata: Vec<&str> = first_line.split(" ").collect();
@@ -325,33 +314,6 @@ impl HttpRequest {
             }
         }
 
-        // get the Content-Type header
-        let content_type = headers.get("Content-Type");
-        
-        let mut body = HashMap::<String, String>::new();
-        
-        // if let Some(content_type) = content_type {
-        //     if content_type == "application/json" {
-        //         body = serde_json::from_str::<HashMap<String, String>>(&request_body_string).unwrap();
-        //     } else if content_type == "application/x-www-form-urlencoded" {
-        //         body = serde_qs::from_str::<HashMap<String, String>>(&request_body_string).unwrap();
-        //     } else {
-        //         body.insert(String::from("value"), String::from(&request_body_string));
-        //     }
-        // }
-
-        match content_type.map(AsRef::as_ref) {
-            Some("application/json") => {
-                body = if let Ok(data) = serde_json::from_str::<HashMap<String, String>>(&request_body_string) { data } else { HashMap::<String, String>::new() };
-            }
-            Some("application/x-www-form-urlencoded") => {
-                body = if let Ok(data) = serde_qs::from_str::<HashMap<String, String>>(&request_body_string) { data } else { HashMap::<String, String>::new() };
-            }
-            _ => {
-                body.insert(String::from("value"), String::from(&request_body_string));
-            }
-        }
-
         Self { headers, body, method, uri, version }
     }
     
@@ -360,8 +322,8 @@ impl HttpRequest {
         &self.headers
     }
 
-    /// Retrieve the request body as HashMap
-    pub fn body(&self) -> &HashMap<String, String> {
+    /// Retrieve the request body
+    pub fn body(&self) -> &String {
         &self.body
     }
 
@@ -384,7 +346,7 @@ impl HttpRequest {
 impl HttpResponse {
     fn new() -> Self {
         let headers = HashMap::<String, String>::new();
-        let body = HashMap::<String, String>::new();
+        let body = String::new();
         let status = HttpStatusStruct(404, "Not Found");
 
         Self { headers, body, status }
@@ -400,14 +362,14 @@ impl HttpResponse {
         &self.headers
     }
 
-    /// Retrieve the response body as HashMap
-    pub fn body(&self) -> &HashMap<String, String> {
+    /// Retrieve the response body
+    pub fn body(&self) -> &String {
         &self.body
     }
 
-    /// Insert a pair key - value to response body (if key is already existed, replace the old value of key)
-    pub fn insert_body(&mut self, key: String, value: String) {
-        &self.body.insert(key, value);
+    /// Set the response body text
+    pub fn text(&mut self, t: String) {
+        self.body = t;
     }
 
     /// Retrieve the response status
