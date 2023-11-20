@@ -1,7 +1,7 @@
 use speed_rs::core::{HttpStatusStruct, HttpServer, HttpServerMode, HttpServerThreadPool, HttpRequest};
 
 fn main() {
-    let mut server = HttpServer::new(HttpServerMode::MULTI_THREAD(HttpServerThreadPool::new(2)), "127.0.0.1:3000");
+    let mut server = HttpServer::new(HttpServerMode::MultiThread(HttpServerThreadPool::new(2)), "127.0.0.1:3000");
     server.insert_handler(|mut req, mut res| {
         let uri = req.uri();
         let body = req.body();

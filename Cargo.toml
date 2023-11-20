@@ -2,6 +2,12 @@
 name = "speed-rs"
 version = "0.1.0"
 edition = "2021"
+authors = ["Le Thanh Long <longlt201203@gmail.com>"]
+description = "A multi-purpose HTTP server library in Rust, suitable for both low-level and high-level HTTP server implementations."
+license = "MIT"
+repository = "https://github.com/longlt201203/speed-rs"
+keywords = ["http", "server", "http-server", "web"]
+categories = ["web-programming", "asynchronous"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

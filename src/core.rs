@@ -10,33 +10,83 @@ use std::{
 
 // Enums
 
+/// HTTP server run mode
+/// - `SingleThread` - run in single thread
+/// - `MultiThread` - run with a thread pool (`HttpServerThreadPool`)
+/// 
+/// Example:
+/// ```rust
+/// let mut server = HttpServer::new(HttpServerMode::SingleThread, "127.0.0.1:3000");
+/// let mut server = HttpServer::new(HttpServerMode::MultiThread(HttpServerThreadPool::new(2)), "127.0.0.1:3000");
+/// ```
 pub enum HttpServerMode {
-    SINGLE_THREAD,
-    MULTI_THREAD(HttpServerThreadPool),
+    SingleThread,
+    MultiThread(HttpServerThreadPool),
 }
 
 // Types
 
+type ExecutorJob = Box<dyn FnOnce() + Send + 'static>;
+
+/// Handle function for HTTP request.
+/// 
+/// Example:
+/// ```rust
+/// server.insert_handler(|mut req, mut res| {
+///     res.set_status(HttpStatusStruct(200, "OK"));
+///     res.set_body(String::from("value"), String::from("Hello World!"));
+///     (req, res)
+/// });
+/// ```
 pub type RequestHandleFunc = fn (HttpRequest, HttpResponse) -> (HttpRequest, HttpResponse);
 
 // Traits
 
 // Declarations
+/// HTTP status structure.
+/// 
+/// Example:
+/// ```rust
+/// HttpStatusStruct(200, "OK")
+/// HttpStatusStruct(400, "Not Found")
+/// HttpStatusStruct(500, "This is not a bug. It is a feature.")
+/// ```
 pub struct HttpStatusStruct(pub i32, pub &'static str);
 
+/// Thread pool implementation for multi-thread HTTP server process.
+/// ```rust
+/// HttpServerThreadPool::new(4)    // 4 threads for handling requests
+/// ```
 pub struct HttpServerThreadPool {
     size: usize,
     executors: Vec<HttpServerThreadExecutor>,
     sender: Option<Sender<ExecutorJob>>,
 }
 
-pub struct HttpServerThreadExecutor {
+struct HttpServerThreadExecutor {
     id: usize,
     thread: Option<JoinHandle<()>>,
 }
 
-pub type ExecutorJob = Box<dyn FnOnce() + Send + 'static>;
-
+/// The almighty HTTP server.
+/// 
+/// Guide:
+/// 1. Create the server
+/// ```rust
+/// let mut server = HttpServer::new(HttpServerMode::MultiThread(HttpServerThreadPool::new(2)), "127.0.0.1:3000");
+/// ```
+/// 2. Insert handlers
+/// ```rust
+/// server.insert_handler(|mut req, mut res| {
+///     res.set_status(HttpStatusStruct(200, "OK"));
+///     res.set_body(String::from("value"), String::from("Hello World!"));
+///     (req, res)
+/// });
+/// ```
+/// 3. Listen
+/// ```rust
+/// server.listen()
+/// ```
 pub struct HttpServer {
     mode: HttpServerMode,
     listener: TcpListener,
@@ -80,7 +130,7 @@ impl HttpServerThreadPool {
         }
     }
 
-    pub fn execute<F>(&self, f: F)
+    fn execute<F>(&self, f: F)
     where
         F: FnOnce() + Send + 'static,
     {
@@ -119,7 +169,7 @@ impl HttpServerThreadExecutor {
 
                     // println!("Executor {} finished its job.", id);
                 }
-                Err(err) => {
+                Err(_err) => {
                     // println!("{:?}", err);
                     // println!("Shutting executor down!");
                     break;
@@ -240,12 +290,12 @@ impl HttpServer {
             for handle in &self.handlers {
                 handles.push(handle.clone());
             }
-            let handles_arc = Arc::new((handles));
+            let handles_arc = Arc::new(handles);
             match &self.mode {
-                HttpServerMode::SINGLE_THREAD => {
+                HttpServerMode::SingleThread => {
                     HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc));
                 }
-                HttpServerMode::MULTI_THREAD(pool) => {
+                HttpServerMode::MultiThread(pool) => {
                     pool.execute(move || HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc)));
                 }
             }
@@ -258,7 +308,7 @@ impl HttpServer {
 }
 
 impl HttpRequest {
-    pub fn new(mut request_headlines: Vec<String>, request_body_string: String) -> Self {
+    fn new(mut request_headlines: Vec<String>, request_body_string: String) -> Self {
         // get the first line out
         let first_line = request_headlines.remove(0);
         let metadata: Vec<&str> = first_line.split(" ").collect();
@@ -305,56 +355,67 @@ impl HttpRequest {
         Self { headers, body, method, uri, version }
     }
     
+    /// Retrieve the request headers
     pub fn headers(&self) -> &HashMap<String, String> {
         &self.headers
     }
 
+    /// Retrieve the request body as HashMap
     pub fn body(&self) -> &HashMap<String, String> {
         &self.body
     }
 
+    /// Retrieve the request method
     pub fn method(&self) -> &String {
         &self.method
     }
 
+    /// Retrieve the request URI
     pub fn uri(&self) -> &String {
         &self.uri
     }
 
+    /// Retrieve the HTTP version
     pub fn version(&self) -> &String {
         &self.version
     }
 }
 
 impl HttpResponse {
-    pub fn new() -> Self {
-        let mut headers = HashMap::<String, String>::new();
-        let mut body = HashMap::<String, String>::new();
+    fn new() -> Self {
+        let headers = HashMap::<String, String>::new();
+        let body = HashMap::<String, String>::new();
         let status = HttpStatusStruct(404, "Not Found");
 
         Self { headers, body, status }
     }
 
+    /// Insert a pair key - value to response headers (if key is already existed, replace the old value of key)
     pub fn insert_header(&mut self, key: String, value: String) {
         &self.headers.insert(key, value);
     }
 
+    /// Retrieve the response headers
     pub fn headers(&self) -> &HashMap<String, String> {
         &self.headers
     }
 
+    /// Retrieve the response body as HashMap
     pub fn body(&self) -> &HashMap<String, String> {
         &self.body
     }
 
+    /// Insert a pair key - value to response body (if key is already existed, replace the old value of key)
     pub fn insert_body(&mut self, key: String, value: String) {
         &self.body.insert(key, value);
     }
 
+    /// Retrieve the response status
     pub fn status(&self) -> &HttpStatusStruct {
         &self.status
     }
 
+    /// Set the response status
     pub fn set_status(&mut self, status: HttpStatusStruct) {
         self.status = status;
     }
