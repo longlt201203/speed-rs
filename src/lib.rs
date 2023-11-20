@@ -1,13 +1,15 @@
 //! SpeedRs provide you a fast, efficient way to construct HTTP Server
 
 use std::{
+    collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
+    panic,
     sync::{
         mpsc::{self, Receiver, Sender},
         Arc, Mutex,
     },
-    thread::{spawn, JoinHandle}, collections::HashMap,
+    thread::{spawn, JoinHandle}, error::Error,
 };
 
 // Enums
@@ -15,7 +17,7 @@ use std::{
 /// HTTP server run mode
 /// - `SingleThread` - run in single thread
 /// - `MultiThread` - run with a thread pool (`HttpServerThreadPool`)
-/// 
+///
 /// Example:
 /// ```rust
 /// let mut server = HttpServer::new(HttpServerMode::SingleThread, "127.0.0.1:3000");
@@ -31,22 +33,34 @@ pub enum HttpServerMode {
 type ExecutorJob = Box<dyn FnOnce() + Send + 'static>;
 
 /// Handle function for HTTP request.
-/// 
+///
 /// Example:
 /// ```rust
 /// server.insert_handler(|mut req, mut res| {
 ///     res.set_status(HttpStatusStruct(200, "OK"));
 ///     res.set_body(String::from("value"), String::from("Hello World!"));
+///     Ok(req, res)
+/// });
+/// ```
+pub type RequestHandleFunc = fn(HttpRequest, HttpResponse) -> Result<(HttpRequest, HttpResponse), (HttpRequest, HttpResponse, Box<dyn Error>)>;
+
+/// Handle function for HTTP request when Error
+/// 
+/// Example:
+/// ```rust
+/// server.set_error_handler(|req, mut res, err| {
+///     res.set_status(HttpStatusStruct(500, "Interal Server Error"));
+///     res.text(format!("Unhandled exception: {:?}", err));
 ///     (req, res)
 /// });
 /// ```
-pub type RequestHandleFunc = fn (HttpRequest, HttpResponse) -> (HttpRequest, HttpResponse);
+pub type RequestErrorHandleFunc = fn(HttpRequest, HttpResponse, Box<dyn Error>) -> (HttpRequest, HttpResponse);
 
 // Traits
 
 // Declarations
 /// HTTP status structure.
-/// 
+///
 /// Example:
 /// ```rust
 /// HttpStatusStruct(200, "OK")
@@ -71,7 +85,7 @@ struct HttpServerThreadExecutor {
 }
 
 /// The almighty HTTP server.
-/// 
+///
 /// Guide:
 /// 1. Create the server
 /// ```rust
@@ -82,17 +96,20 @@ struct HttpServerThreadExecutor {
 /// server.insert_handler(|mut req, mut res| {
 ///     res.set_status(HttpStatusStruct(200, "OK"));
 ///     res.set_body(String::from("value"), String::from("Hello World!"));
-///     (req, res)
+///     Ok(req, res)
 /// });
 /// ```
 /// 3. Listen
 /// ```rust
-/// server.listen()
+/// server.listen(|| {
+///     println!("Server is listening at http://127.0.0.1:3000");
+/// });
 /// ```
 pub struct HttpServer {
     mode: HttpServerMode,
     listener: TcpListener,
-    handlers: Vec<RequestHandleFunc>
+    handlers: Vec<RequestHandleFunc>,
+    error_handler: RequestErrorHandleFunc
 }
 
 pub struct HttpRequest {
@@ -100,13 +117,13 @@ pub struct HttpRequest {
     body: String,
     method: String,
     uri: String,
-    version: String
+    version: String,
 }
 
 pub struct HttpResponse {
     headers: HashMap<String, String>,
     body: String,
-    status: HttpStatusStruct
+    status: HttpStatusStruct,
 }
 
 // Implementations
@@ -122,7 +139,7 @@ impl HttpServerThreadPool {
         let mut executors: Vec<HttpServerThreadExecutor> = Vec::with_capacity(size);
 
         for i in 0..size {
-            executors.push(HttpServerThreadExecutor::new(i+1, Arc::clone(&receiver)));
+            executors.push(HttpServerThreadExecutor::new(i + 1, Arc::clone(&receiver)));
         }
 
         Self {
@@ -179,7 +196,10 @@ impl HttpServerThreadExecutor {
             }
         });
 
-        Self { id, thread: Some(thread) }
+        Self {
+            id,
+            thread: Some(thread),
+        }
     }
 }
 
@@ -187,8 +207,7 @@ impl HttpServer {
     /**
      * This function extract string data from the TCP stream request
      */
-    fn handle_tcp_stream(stream: TcpStream, request_handles: Arc<Vec<RequestHandleFunc>>) {
-
+    fn handle_tcp_stream(stream: TcpStream, request_handles: Arc<Vec<RequestHandleFunc>>, request_error_handle: Arc<RequestErrorHandleFunc>) {
         // init reader
         let mut reader = BufReader::new(&stream);
 
@@ -230,7 +249,10 @@ impl HttpServer {
         let mut res = HttpResponse::new();
 
         for handle in request_handles.as_ref() {
-            (req, res) = handle(req, res);
+            (req, res) = match handle(req, res) {
+                Ok((req, res)) => (req, res),
+                Err((req, res, e)) => request_error_handle(req, res, e)
+            }
         }
 
         HttpServer::write_response(stream, req, res);
@@ -244,11 +266,19 @@ impl HttpServer {
         if !res.headers().contains_key("Content-Type") {
             res.insert_header(String::from("Content-Type"), String::from("text/plain"));
         }
-        res.insert_header(String::from("Content-Length"), String::from(format!("{}", res.body().len())));
+        res.insert_header(
+            String::from("Content-Length"),
+            String::from(format!("{}", res.body().len())),
+        );
 
         // construct response headlines
         let mut response_headlines = Vec::<String>::new();
-        response_headlines.push(String::from(format!("{} {} {}", req.version(), res.status().0, res.status().1)));
+        response_headlines.push(String::from(format!(
+            "{} {} {}",
+            req.version(),
+            res.status().0,
+            res.status().1
+        )));
 
         for header in res.headers() {
             response_headlines.push(String::from(format!("{}: {}", header.0, header.1)));
@@ -271,10 +301,20 @@ impl HttpServer {
 
     pub fn new(mode: HttpServerMode, bind_adr: &str) -> Self {
         let listener = TcpListener::bind(bind_adr).unwrap();
-        Self { mode, listener, handlers: Vec::<RequestHandleFunc>::new() }
+        Self {
+            mode,
+            listener,
+            handlers: Vec::<RequestHandleFunc>::new(),
+            error_handler: |req, mut res, err| {
+                res.set_status(HttpStatusStruct(500, "Interal Server Error"));
+                res.text(format!("Unhandled exception: {:?}", err));
+                (req, res)
+            }
+        }
     }
 
-    pub fn listen(&self) {
+    pub fn listen(&self, cb: fn()) {
+        cb();
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
             let mut handles = Vec::<RequestHandleFunc>::new();
@@ -282,12 +322,21 @@ impl HttpServer {
                 handles.push(handle.clone());
             }
             let handles_arc = Arc::new(handles);
+            let error_handle_arc = Arc::new(self.error_handler);
             match &self.mode {
                 HttpServerMode::SingleThread => {
-                    HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc));
+                    if let Err(e) = panic::catch_unwind(move || HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc), Arc::clone(&error_handle_arc))) {
+                        println!("Panic occurred in handle_tcp_stream()!");
+                        println!("Error: {:?}", e);
+                    }
                 }
                 HttpServerMode::MultiThread(pool) => {
-                    pool.execute(move || HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc)));
+                    pool.execute(move || {
+                        if let Err(e) = panic::catch_unwind(move || HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc), Arc::clone(&error_handle_arc))) {
+                            println!("Panic occurred in handle_tcp_stream()!");
+                            println!("Error: {:?}", e);
+                        }
+                    });
                 }
             }
         }
@@ -295,6 +344,20 @@ impl HttpServer {
 
     pub fn insert_handler(&mut self, handler: RequestHandleFunc) {
         &self.handlers.push(handler);
+    }
+
+    /// Custom error handling function
+    /// 
+    /// Example:
+    /// ```rust
+    /// server.set_error_handler(|req, mut res, err| {
+    ///     res.set_status(HttpStatusStruct(500, "Interal Server Error"));
+    ///     res.text(format!("Unhandled exception: {:?}", err));
+    ///     (req, res)
+    /// });
+    /// ```
+    pub fn set_error_handler(&mut self, handler: RequestErrorHandleFunc) {
+        self.error_handler = handler;
     }
 }
 
@@ -316,9 +379,15 @@ impl HttpRequest {
             }
         }
 
-        Self { headers, body, method, uri, version }
+        Self {
+            headers,
+            body,
+            method,
+            uri,
+            version,
+        }
     }
-    
+
     /// Retrieve the request headers
     pub fn headers(&self) -> &HashMap<String, String> {
         &self.headers
@@ -351,7 +420,11 @@ impl HttpResponse {
         let body = String::new();
         let status = HttpStatusStruct(404, "Not Found");
 
-        Self { headers, body, status }
+        Self {
+            headers,
+            body,
+            status,
+        }
     }
 
     /// Insert a pair key - value to response headers (if key is already existed, replace the old value of key)

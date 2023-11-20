@@ -24,7 +24,7 @@ Now you can use the package freely.
 `speed-rs-core` provides just the core HTTP handling, so you will need to handle the higher-level abstractions. Below is an example of how to respond with an HTML file to the client when there is a request:
 ```rust
 use std::fs;
-use speed_rs_core::{HttpServer, HttpServerMode, HttpStatus};
+use speed_rs_core::{HttpServer, HttpServerMode, HttpStatusStruct};
 
 fn main() {
     // Create the server in single-thread mode
@@ -32,21 +32,27 @@ fn main() {
     
     // Provide the request handling function
     server.insert_handler(|mut req, mut res| {
-        res.set_status(HttpStatus::new(200, "OK"));
+        res.set_status(HttpStatusStruct(200, "OK"));
         res.insert_header("Content-Type".to_string(), "text/html".to_string());
 
-        // Make sure to create the corresponding folders and files
-        let html = fs::read_to_string("public/index.html").unwrap();
 
-        // Response body as text
-        res.text(html);
+        // Read the HTML
+        let err = match fs::read_to_string("public/index.html") {
+            Ok(html) => {
+                res.text(html);
+                None
+            },
+            Err(e) => Some(e)
+        };
 
         // Since the ownership of req and res are taken, you must return them back to the server
-        (req, res)
+        if let Some(e) = err { Err((req, res, Box::new(e))) } else { Ok((req, res)) }
     });
 
     // Start listening for requests
-    server.listen();
+    server.listen(|| {
+        println!("Server is listening at http://127.0.0.1:3000");
+    });
 }
 ```
 ## Development Guide
@@ -71,7 +77,7 @@ server.insert_handler(|mut req, mut res| {
     // ...
     let params = req.params();
     // ...
-    (req, res)
+    Ok(req, res)
 });
 ```
 ## License
