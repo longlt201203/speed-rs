@@ -13,7 +13,7 @@ Or add the following line to the dependencies in your `Cargo.toml` file:
 ```
 [dependencies]
 ...
-speed-rs-core = "0.1.0"
+speed-rs-core = "0.2.0"
 ```
 Finally build the project
 ```
