@@ -1,2 +1,2 @@
-# speed-rs
-HTTP Server for Rust
+# speed-rs-core
+A core HTTP Server implementation for Rust.
