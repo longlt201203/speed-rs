@@ -12,6 +12,3 @@ categories = ["web-programming", "asynchronous"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = "1.0.192"
-serde_json = "1.0.108"
-serde_qs = "0.12.0"

@@ -7,7 +7,7 @@ use std::{
     panic,
     sync::{
         mpsc::{self, Receiver, Sender},
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
     },
     thread::{spawn, JoinHandle}, error::Error,
 };
@@ -42,7 +42,7 @@ type ExecutorJob = Box<dyn FnOnce() + Send + 'static>;
 ///     Ok(req, res)
 /// });
 /// ```
-pub type RequestHandleFunc = fn(HttpRequest, HttpResponse) -> Result<(HttpRequest, HttpResponse), (HttpRequest, HttpResponse, Box<dyn Error>)>;
+pub type RequestHandleFunc = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(HttpRequest, HttpResponse), (HttpRequest, HttpResponse, Box<dyn Error>)> + Send + Sync + 'static>;
 
 /// Handle function for HTTP request when Error
 /// 
@@ -108,7 +108,7 @@ struct HttpServerThreadExecutor {
 pub struct HttpServer {
     mode: HttpServerMode,
     listener: TcpListener,
-    handlers: Vec<RequestHandleFunc>,
+    handlers: Arc<RwLock<Vec<RequestHandleFunc>>>,
     error_handler: RequestErrorHandleFunc
 }
 
@@ -207,7 +207,7 @@ impl HttpServer {
     /**
      * This function extract string data from the TCP stream request
      */
-    fn handle_tcp_stream(stream: TcpStream, request_handles: Arc<Vec<RequestHandleFunc>>, request_error_handle: Arc<RequestErrorHandleFunc>) {
+    fn handle_tcp_stream(stream: TcpStream, request_handles: Arc<RwLock<Vec<RequestHandleFunc>>>, request_error_handle: Arc<RequestErrorHandleFunc>) {
         // init reader
         let mut reader = BufReader::new(&stream);
 
@@ -248,7 +248,7 @@ impl HttpServer {
         let mut req = HttpRequest::new(request_headlines, body);
         let mut res = HttpResponse::new();
 
-        for handle in request_handles.as_ref() {
+        for handle in request_handles.read().unwrap().iter() {
             (req, res) = match handle(req, res) {
                 Ok((req, res)) => (req, res),
                 Err((req, res, e)) => request_error_handle(req, res, e)
@@ -304,7 +304,7 @@ impl HttpServer {
         Self {
             mode,
             listener,
-            handlers: Vec::<RequestHandleFunc>::new(),
+            handlers: Arc::new(RwLock::new(Vec::<RequestHandleFunc>::new())),
             error_handler: |req, mut res, err| {
                 res.set_status(HttpStatusStruct(500, "Interal Server Error"));
                 res.text(format!("Unhandled exception: {:?}", err));
@@ -317,22 +317,18 @@ impl HttpServer {
         cb();
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
-            let mut handles = Vec::<RequestHandleFunc>::new();
-            for handle in &self.handlers {
-                handles.push(handle.clone());
-            }
-            let handles_arc = Arc::new(handles);
+            let handles_arc = Arc::clone(&self.handlers);
             let error_handle_arc = Arc::new(self.error_handler);
             match &self.mode {
                 HttpServerMode::SingleThread => {
-                    if let Err(e) = panic::catch_unwind(move || HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc), Arc::clone(&error_handle_arc))) {
+                    if let Err(e) = panic::catch_unwind(move || HttpServer::handle_tcp_stream(stream, handles_arc, Arc::clone(&error_handle_arc))) {
                         println!("Panic occurred in handle_tcp_stream()!");
                         println!("Error: {:?}", e);
                     }
                 }
                 HttpServerMode::MultiThread(pool) => {
                     pool.execute(move || {
-                        if let Err(e) = panic::catch_unwind(move || HttpServer::handle_tcp_stream(stream, Arc::clone(&handles_arc), Arc::clone(&error_handle_arc))) {
+                        if let Err(e) = panic::catch_unwind(move || HttpServer::handle_tcp_stream(stream, handles_arc, Arc::clone(&error_handle_arc))) {
                             println!("Panic occurred in handle_tcp_stream()!");
                             println!("Error: {:?}", e);
                         }
@@ -342,8 +338,10 @@ impl HttpServer {
         }
     }
 
-    pub fn insert_handler(&mut self, handler: RequestHandleFunc) {
-        &self.handlers.push(handler);
+    pub fn insert_handler<F>(&mut self, handler: F)
+                where F: Fn(HttpRequest, HttpResponse) -> Result<(HttpRequest, HttpResponse), (HttpRequest, HttpResponse, Box<dyn Error>)> + Send + Sync + 'static {
+        let mut writter = self.handlers.write().unwrap();
+        writter.push(Box::new(handler));
     }
 
     /// Custom error handling function
@@ -429,7 +427,7 @@ impl HttpResponse {
 
     /// Insert a pair key - value to response headers (if key is already existed, replace the old value of key)
     pub fn insert_header(&mut self, key: String, value: String) {
-        &self.headers.insert(key, value);
+        self.headers.insert(key, value);
     }
 
     /// Retrieve the response headers
