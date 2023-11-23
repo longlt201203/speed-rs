@@ -1,5 +1,8 @@
 //! SpeedRs provide you a fast, efficient way to construct HTTP Server
 
+/// More utilities
+pub mod utils;
+
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
@@ -122,7 +125,7 @@ pub struct HttpRequest {
 
 pub struct HttpResponse {
     headers: HashMap<String, String>,
-    body: String,
+    body: Vec<u8>,
     status: HttpStatusStruct,
 }
 
@@ -264,11 +267,11 @@ impl HttpServer {
     fn write_response(mut stream: TcpStream, req: HttpRequest, mut res: HttpResponse) {
         // construct response body
         if !res.headers().contains_key("Content-Type") {
-            res.insert_header(String::from("Content-Type"), String::from("text/plain"));
+            res.insert_header(String::from("Content-Type"), String::from("application/octet-stream"));
         }
         res.insert_header(
             String::from("Content-Length"),
-            String::from(format!("{}", res.body().len())),
+            String::from(res.body().len().to_string()),
         );
 
         // construct response headlines
@@ -292,11 +295,12 @@ impl HttpServer {
             response_string.push('\n');
         }
         response_string.push('\n');
-        response_string.push_str(res.body());
+        let mut response_data = Vec::from(response_string.as_bytes());
+        response_data.append(&mut res.body);
 
         // println!("Response string: {}", &response_string);
 
-        stream.write_all(response_string.as_bytes()).unwrap();
+        stream.write_all(&response_data).unwrap();
     }
 
     pub fn new(mode: HttpServerMode, bind_adr: &str) -> Self {
@@ -415,12 +419,11 @@ impl HttpRequest {
 impl HttpResponse {
     fn new() -> Self {
         let headers = HashMap::<String, String>::new();
-        let body = String::new();
         let status = HttpStatusStruct(404, "Not Found");
 
         Self {
             headers,
-            body,
+            body: Vec::new(),
             status,
         }
     }
@@ -436,13 +439,23 @@ impl HttpResponse {
     }
 
     /// Retrieve the response body
-    pub fn body(&self) -> &String {
+    pub fn body(&self) -> &[u8] {
         &self.body
+    }
+
+    /// Retrieve the response body as string
+    pub fn body_string(&self) -> Result<String, std::string::FromUtf8Error> {
+        String::from_utf8(self.body.clone())
     }
 
     /// Set the response body text
     pub fn text(&mut self, t: String) {
-        self.body = t;
+        self.insert_header(String::from("Content-Type"), String::from("text/plain"));
+        self.body = Vec::from(t.as_bytes());
+    }
+
+    pub fn bytes(&mut self, b: Vec<u8>) {
+        self.body = b;
     }
 
     /// Retrieve the response status

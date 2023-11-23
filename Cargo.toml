@@ -1,6 +1,6 @@
 [package]
 name = "speed-rs-core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Le Thanh Long <longlt201203@gmail.com>"]
 description = "A core HTTP handling server library in Rust, providing low-level HTTP server implementation."
@@ -12,3 +12,4 @@ categories = ["web-programming", "asynchronous"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+mime_guess = "2.0.4"
