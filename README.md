@@ -13,7 +13,7 @@ Or add the following line to the dependencies in your `Cargo.toml` file:
 ```
 [dependencies]
 ...
-speed-rs-core = "0.2.0"
+speed-rs-core = "0.3.0"
 ```
 Finally build the project
 ```
@@ -21,6 +21,7 @@ cargo build
 ```
 Now you can use the package freely.
 ## How To Use
+### Basic Usage
 `speed-rs-core` provides just the core HTTP handling, so you will need to handle the higher-level abstractions. Below is an example of how to respond with an HTML file to the client when there is a request:
 ```rust
 use std::fs;
@@ -54,6 +55,13 @@ fn main() {
         println!("Server is listening at http://127.0.0.1:3000");
     });
 }
+```
+### Utilities
+Provide some helper traits and functions. You simply need to import. Example:
+```rust
+use speed_rs_core::utils::{{ServeStatic}};
+
+server.serve_static(Some(String::from("folder")));
 ```
 ## Development Guide
 To further develop this package and leverage the powerful features of Rust, you can implement traits like `RequestParamsExtractor` for additional functionalities:
