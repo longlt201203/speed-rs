@@ -307,6 +307,7 @@ impl HttpServer {
         let listener = TcpListener::bind(bind_adr).unwrap();
         let default_error_handler = |req: HttpRequest, mut res: HttpResponse, err: Box<dyn Error>| {
             res.set_status(HttpStatusStruct(500, "Interal Server Error"));
+            res.insert_header(String::from("Content-Type"), String::from("text/plain"));
             res.text(format!("Unhandled exception: {:?}", err));
             (req, res)
         };
@@ -453,7 +454,6 @@ impl HttpResponse {
 
     /// Set the response body text
     pub fn text(&mut self, t: String) {
-        self.insert_header(String::from("Content-Type"), String::from("text/plain"));
         self.body = Vec::from(t.as_bytes());
     }
 
