@@ -42,7 +42,7 @@ type ExecutorJob = Box<dyn FnOnce() + Send + 'static>;
 /// server.insert_handler(|mut req, mut res| {
 ///     res.set_status(HttpStatusStruct(200, "OK"));
 ///     res.set_body(String::from("value"), String::from("Hello World!"));
-///     Ok(req, res)
+///     Ok((req, res))
 /// });
 /// ```
 pub type RequestHandleFunc = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(HttpRequest, HttpResponse), (HttpRequest, HttpResponse, Box<dyn Error>)> + Send + Sync + 'static>;
