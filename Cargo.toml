@@ -1,6 +1,6 @@
 [package]
 name = "speed-rs-core"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Le Thanh Long <longlt201203@gmail.com>"]
 description = "A core HTTP handling server library in Rust, providing low-level HTTP server implementation."
