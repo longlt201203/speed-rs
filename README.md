@@ -1,4 +1,6 @@
 # speed-rs-core
+![](speedrs-logo.png)
+
 A core HTTP Server implementation for Rust.
 ## Installation
 Create a new Rust project using `cargo`
@@ -55,7 +57,8 @@ fn main() {
     });
 }
 ```
-For more details, you can checkout this [guide](GUIDE.MD).
+> [!NOTE]
+> For more details, you can checkout this [guide](GUIDE.MD).
 ## Development Guide
 To further develop this package and leverage the powerful features of Rust, you can implement traits like `RequestParamsExtractor` for additional functionalities:
 ```rust

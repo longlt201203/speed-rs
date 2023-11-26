@@ -1,4 +1,6 @@
 # Welcome
+![](speedrs-logo.png)
+
 This guide is made for you to understand and familar with **SpeedRs**.
 ## Core HTTP Server
 ```rust
@@ -69,4 +71,10 @@ fn main() {
         println!("Server is listening at http://127.0.0.1:3000");
     });
 }
+```
+> [!IMPORTANT]
+> Be mindful of the defining order of a route.
+```rust
+router.define_route(Route::all("/test/", |req, res| {...}));
+router.define_route(Route::get("/test/", |req, res| {...}));    // This will be execute after 'all' route.
 ```
