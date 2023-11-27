@@ -12,7 +12,7 @@ use std::{
         mpsc::{self, Receiver, Sender},
         Arc, Mutex, RwLock,
     },
-    thread::{spawn, JoinHandle}, error::Error,
+    thread::{spawn, JoinHandle}, error::Error, vec,
 };
 
 // Enums
@@ -117,7 +117,7 @@ pub struct HttpServer {
 
 pub struct HttpRequest {
     headers: HashMap<String, String>,
-    body: String,
+    body: Vec<u8>,
     method: String,
     uri: String,
     version: String,
@@ -222,7 +222,7 @@ impl HttpServer {
             .take_while(|line| !line.is_empty())
             .collect();
 
-        // find content length
+        // find content length and content type
         let content_length = request_headlines
             .iter()
             .find_map(|line| {
@@ -236,18 +236,11 @@ impl HttpServer {
             .unwrap_or(0);
 
         // read the request body
-        let mut body = String::new();
+        let mut body = Vec::<u8>::new();
         if content_length > 0 {
-            reader
-                .by_ref()
-                .take(content_length as u64)
-                .read_to_string(&mut body)
-                .unwrap();
+            body = vec![0; content_length];
+            reader.by_ref().read_exact(&mut body).unwrap();
         }
-
-        // println!("Request headlines: {:?}", request_headlines);
-        // println!("Request body string: {}", &body);
-
         let mut req = HttpRequest::new(request_headlines, body);
         let mut res = HttpResponse::new();
 
@@ -368,7 +361,7 @@ impl HttpServer {
 }
 
 impl HttpRequest {
-    fn new(mut request_headlines: Vec<String>, body: String) -> Self {
+    fn new(mut request_headlines: Vec<String>, body: Vec<u8>) -> Self {
         // get the first line out
         let first_line = request_headlines.remove(0);
         let metadata: Vec<&str> = first_line.split(" ").collect();
@@ -400,7 +393,7 @@ impl HttpRequest {
     }
 
     /// Retrieve the request body
-    pub fn body(&self) -> &String {
+    pub fn body(&self) -> &Vec<u8> {
         &self.body
     }
 
