@@ -15,7 +15,7 @@ Or add the following line to the dependencies in your `Cargo.toml` file:
 ```
 [dependencies]
 ...
-speed-rs-core = "0.4.0"
+speed-rs-core = "0.4.1"
 ```
 Finally build the project
 ```
